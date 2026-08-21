@@ -204,13 +204,13 @@ def make_transformer_replay_training_data(tokens_lst, context_size, token_to_id)
 
     return torch.stack(inputs), torch.stack(targets)
 
-def replay_based_train(model, epochs, optimizer, data_mush: dict, data_mush_replayer: list, replays, token_to_id, context_win_size, HyperDimComp: hdc.Hyperdimensional_Computing_Model, HDC_encoder, HDC_model, step, data_max, batch_size):
+def replay_based_train(model, epochs, optimizer, data_mush: dict, data_mush_replayer: list, replays, token_to_id, context_win_size, HyperDimComp: hdc.Hyperdimensional_Computing_Model, HDC_encoder, HDC_model, step, data_max, batch_size, filter_threshold, max_threshold, min_threshold):
     if len(data_mush) > data_max:
         tokens_lst = []
         for data in data_mush.values():
             tokens_lst.append(data.split())
 
-        HDC_model, data_mush = HyperDimComp.evict_data(HDC_encoder, HDC_model, tokens_lst, 0.8, data_mush, context_win_size, 128, data_max)
+        HDC_model, data_mush = HyperDimComp.evict_data(HDC_encoder, HDC_model, tokens_lst, filter_threshold, data_mush, context_win_size, 128, data_max)
 
     for epoch in range(epochs):
         tokens_lst = []
@@ -224,9 +224,8 @@ def replay_based_train(model, epochs, optimizer, data_mush: dict, data_mush_repl
             data_mush_replayer.remove(random_replay)
         
         tokens_lst_temp = []
-        #texts = [" ".join(tokens) for tokens in tokens_lst]
 
-        results, HDC_model_new, data_mush_new = HyperDimComp.HDC_predict(HDC_encoder, HDC_model, tokens_lst, top=50, threshold=0.7, min_threshold=0.3, max_threshold=0.8, data_mush=data_mush, win_size=context_win_size, batch_size=128)
+        results, HDC_model_new, data_mush_new = HyperDimComp.HDC_predict(HDC_encoder, HDC_model, tokens_lst, top=50, threshold=max_threshold, min_threshold=min_threshold, max_threshold=filter_threshold, data_mush=data_mush, win_size=context_win_size, batch_size=128)
 
         print(len(data_mush), len(data_mush_new))
 
@@ -245,7 +244,7 @@ def replay_based_train(model, epochs, optimizer, data_mush: dict, data_mush_repl
         data_mush = data_mush_new
 
         train_inputs, train_targets = make_transformer_training_data(tokens_lst, context_win_size, token_to_id, step)
-        trainable_params = get_related_params(model, (train_inputs, train_targets), 128)
+        trainable_params = get_related_params(model, (train_inputs, train_targets), 256)
 
         train_inputs, train_targets = make_transformer_replay_training_data(tokens_lst, context_win_size, token_to_id)
 
@@ -306,7 +305,11 @@ def main():
 
     REPLAYS_PER_EPOCH = 2048
     INPUTS_TARGET_DIS = 256
-    DATA_RESERVOIR = 200000
+    DATA_RESERVOIR = 100000
+
+    MAX_THRESHOLD = 0.7
+    MIN_THRESHOLD = 0.3
+    FILTER_THRESHOLD = 0.8
 
     TEMPERATURE = 1
     CONTEXT_WIN_SIZE = 256
@@ -393,7 +396,7 @@ def main():
         epochs = int(len(data_mush_replayer) / REPLAYS_PER_EPOCH)
         print(f"Epochs: {epochs}")
 
-        data_mush_replayer, HDC_model, data_mush = replay_based_train(model, epochs, optimizer, data_mush, data_mush_replayer, REPLAYS_PER_EPOCH, token_to_id, CONTEXT_WIN_SIZE, HyperDimComp, HDC_encoder, HDC_model, INPUTS_TARGET_DIS, DATA_RESERVOIR, TRANSFORMER_BATCH_SIZE)
+        data_mush_replayer, HDC_model, data_mush = replay_based_train(model, epochs, optimizer, data_mush, data_mush_replayer, REPLAYS_PER_EPOCH, token_to_id, CONTEXT_WIN_SIZE, HyperDimComp, HDC_encoder, HDC_model, INPUTS_TARGET_DIS, DATA_RESERVOIR, TRANSFORMER_BATCH_SIZE, FILTER_THRESHOLD, MAX_THRESHOLD, MIN_THRESHOLD)
 
     while True:
         tokens = tokenizer.encode(input("Prompt: "))
